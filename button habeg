@@ -1,0 +1,78 @@
+-- Exploit: Jump + Rotate Back (Auto Load Saat Respawn/Spawn)
+-- Gunakan di executor Roblox
+
+local player = game.Players.LocalPlayer
+
+-- Buat GUI
+local gui = Instance.new("ScreenGui")
+gui.Name = "ExploitGUI"
+gui.Parent = player.PlayerGui
+
+local button = Instance.new("TextButton")
+button.Size = UDim2.new(0, 70, 0, 70)
+button.Position = UDim2.new(0.82, 0, 0.80, 0)
+button.Text = "H"
+button.TextSize = 33
+button.TextColor3 = Color3.fromRGB(255, 255, 255)
+button.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+button.BackgroundTransparency = 0
+button.BorderSizePixel = 0
+button.AutoButtonColor = true
+button.Font = Enum.Font.GothamBold
+button.Parent = gui
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(1, 0)
+corner.Parent = button
+
+local glow = Instance.new("ImageLabel")
+glow.Size = UDim2.new(1.2, 0, 1.2, 0)
+glow.Position = UDim2.new(-0.1, 0, -0.1, 0)
+glow.Image = "rbxasset://textures/ui/Button/button.png"
+glow.ImageColor3 = Color3.fromRGB(0, 150, 255)
+glow.ImageTransparency = 0.4
+glow.BackgroundTransparency = 1
+glow.ZIndex = 0
+glow.Parent = button
+
+local shadow = Instance.new("ImageLabel")
+shadow.Size = UDim2.new(1, 5, 1, 5)
+shadow.Position = UDim2.new(0, -3, 0, -3)
+shadow.Image = "rbxasset://textures/ui/Button/button.png"
+shadow.ImageColor3 = Color3.fromRGB(0, 0, 0)
+shadow.ImageTransparency = 0.6
+shadow.BackgroundTransparency = 1
+shadow.ZIndex = 0
+shadow.Parent = button
+
+-- Fungsi jump + rotate
+local function jumpAndRotate()
+    local character = player.Character
+    if not character then return end
+    
+    local humanoid = character:FindFirstChild("Humanoid")
+    local rootPart = character:FindFirstChild("HumanoidRootPart")
+    
+    if humanoid and rootPart then
+        local velocity = Instance.new("BodyVelocity")
+        velocity.Velocity = Vector3.new(0, 50, 0)
+        velocity.MaxForce = Vector3.new(0, math.huge, 0)
+        velocity.Parent = rootPart
+        
+        task.wait(0.1)
+        velocity:Destroy()
+        
+        rootPart.CFrame = rootPart.CFrame * CFrame.Angles(0, math.rad(180), 0)
+        
+        if humanoid:GetState() == Enum.HumanoidStateType.Jumping then
+            humanoid:ChangeState(Enum.HumanoidStateType.FallingDown)
+        end
+    end
+end
+
+button.MouseButton1Click:Connect(jumpAndRotate)
+
+-- Auto reload fungsi saat respawn/spawn
+player.CharacterAdded:Connect(function()
+    -- Fungsi tetap berjalan tanpa notifikasi
+end)

@@ -1,0 +1,240 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UIS = game:GetService("UserInputService")
+local CoreGui = game:GetService("CoreGui")
+
+local LocalPlayer = Players.LocalPlayer
+local char = nil
+local humanoid = nil
+local rootPart = nil
+
+local currentGui = nil
+local button = nil
+local moonwalk = false
+local turningLeft = false
+local turningRight = false
+
+local baseYaw = 0
+local currentYaw = 0
+local maxTurn = 40
+local turnSpeed = 850
+local returnSpeed = 800
+
+local activeConnections = {}
+local buttonConnections = {}
+local lastCharCheck = 0
+local charValid = false
+
+local function GetRole()
+    if not LocalPlayer.Team then return "Lobby" end
+    local name = LocalPlayer.Team.Name
+    if name == "Killer" then return "Killer" end
+    if name == "Survivors" then return "Survivor" end
+    return "Lobby"
+end
+
+local function updateCharacterRefs(newChar)
+    char = newChar or LocalPlayer.Character
+    if not char then 
+        charValid = false
+        return false 
+    end
+    humanoid = char:FindFirstChild("Humanoid")
+    rootPart = char:FindFirstChild("HumanoidRootPart")
+    charValid = (humanoid and rootPart and rootPart.Parent ~= nil)
+    return charValid
+end
+
+local function getYaw(cf)
+    local _, y, _ = cf:ToEulerAnglesYXZ()
+    return math.deg(y)
+end
+
+local function setYaw(cf, yaw)
+    return CFrame.new(cf.Position) * CFrame.Angles(0, math.rad(yaw), 0)
+end
+
+local function clearButtonEvents()
+    for _, conn in pairs(buttonConnections) do
+        pcall(function() conn:Disconnect() end)
+    end
+    buttonConnections = {}
+end
+
+local function enableMoonwalk()
+    if GetRole() ~= "Survivor" then return end
+    if not charValid then 
+        if not updateCharacterRefs() then return end
+    end
+    if not rootPart or not humanoid then return end
+    if moonwalk then return end
+    moonwalk = true
+    humanoid.AutoRotate = false
+    baseYaw = getYaw(rootPart.CFrame)
+    currentYaw = baseYaw
+    if button then
+        pcall(function()
+            button.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+        end)
+    end
+end
+
+local function disableMoonwalk()
+    if not moonwalk then return end
+    moonwalk = false
+    if charValid and humanoid then
+        humanoid.AutoRotate = true
+    end
+    if button then
+        pcall(function()
+            button.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+        end)
+    end
+    turningLeft = false
+    turningRight = false
+end
+
+local function destroyGUI()
+    if currentGui then
+        pcall(function() currentGui:Destroy() end)
+        currentGui = nil
+        button = nil
+    end
+end
+
+local function createGUI()
+    if GetRole() ~= "Survivor" then
+        return
+    end
+    
+    if currentGui then
+        destroyGUI()
+    end
+    
+    clearButtonEvents()
+    
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "MoonwalkController"
+    gui.IgnoreGuiInset = true
+    gui.ResetOnSpawn = false
+    gui.Parent = CoreGui
+    currentGui = gui
+    
+    button = Instance.new("TextButton")
+    button.Size = UDim2.new(0, 45, 0, 45)
+    button.Position = UDim2.new(1, -50, 1, -110)
+    button.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+    button.Text = "R"
+    button.TextColor3 = Color3.new(1, 1, 1)
+    button.TextScaled = true
+    button.BorderSizePixel = 0
+    button.Parent = gui
+    
+    local mouseDownConn = button.MouseButton1Down:Connect(enableMoonwalk)
+    table.insert(buttonConnections, mouseDownConn)
+    
+    local mouseUpConn = button.MouseButton1Up:Connect(disableMoonwalk)
+    table.insert(buttonConnections, mouseUpConn)
+    
+    local touchBeganConn = button.TouchBegan:Connect(enableMoonwalk)
+    table.insert(buttonConnections, touchBeganConn)
+    
+    local touchEndedConn = button.TouchEnded:Connect(disableMoonwalk)
+    table.insert(buttonConnections, touchEndedConn)
+end
+
+local function clearAllEvents()
+    for _, conn in ipairs(activeConnections) do
+        pcall(function() conn:Disconnect() end)
+    end
+    activeConnections = {}
+    clearButtonEvents()
+end
+
+clearAllEvents()
+
+local touchMovedConn = UIS.TouchMoved:Connect(function(input)
+    if not moonwalk or GetRole() ~= "Survivor" then return end
+    if math.abs(input.Delta.X) > 3 then
+        if input.Delta.X > 0 then
+            turningRight = true
+            turningLeft = false
+        else
+            turningLeft = true
+            turningRight = false
+        end
+    end
+end)
+table.insert(activeConnections, touchMovedConn)
+
+local touchEndedConn = UIS.TouchEnded:Connect(function()
+    turningLeft = false
+    turningRight = false
+end)
+table.insert(activeConnections, touchEndedConn)
+
+local renderConn = RunService.RenderStepped:Connect(function(dt)
+    if not moonwalk then return end
+    if GetRole() ~= "Survivor" then
+        if moonwalk then disableMoonwalk() end
+        return
+    end
+    
+    local now = tick()
+    if now - lastCharCheck >= 0.5 then
+        lastCharCheck = now
+        if not charValid then
+            if not updateCharacterRefs() then return end
+        end
+    end
+    
+    if not rootPart or not humanoid or not rootPart.Parent then 
+        charValid = false
+        return 
+    end
+    
+    if turningLeft then
+        currentYaw = math.clamp(currentYaw - turnSpeed * dt, baseYaw - maxTurn, baseYaw + maxTurn)
+    elseif turningRight then
+        currentYaw = math.clamp(currentYaw + turnSpeed * dt, baseYaw - maxTurn, baseYaw + maxTurn)
+    else
+        if currentYaw < baseYaw then
+            currentYaw = math.min(currentYaw + returnSpeed * dt, baseYaw)
+        elseif currentYaw > baseYaw then
+            currentYaw = math.max(currentYaw - returnSpeed * dt, baseYaw)
+        end
+    end
+    
+    if rootPart and rootPart.Parent then
+        rootPart.CFrame = setYaw(CFrame.new(rootPart.CFrame.Position), currentYaw)
+    end
+end)
+table.insert(activeConnections, renderConn)
+
+local charAddedConn = LocalPlayer.CharacterAdded:Connect(function(newChar)
+    task.wait(0.2)
+    updateCharacterRefs(newChar)
+    if moonwalk then
+        disableMoonwalk()
+        task.wait(0.1)
+        if GetRole() == "Survivor" then
+            enableMoonwalk()
+        end
+    end
+end)
+table.insert(activeConnections, charAddedConn)
+
+local teamConn = LocalPlayer:GetPropertyChangedSignal("Team"):Connect(function()
+    if GetRole() == "Survivor" then
+        createGUI()
+    else
+        destroyGUI()
+        if moonwalk then
+            disableMoonwalk()
+        end
+    end
+end)
+table.insert(activeConnections, teamConn)
+
+updateCharacterRefs()
+createGUI()

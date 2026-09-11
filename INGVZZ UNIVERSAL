@@ -1,0 +1,50 @@
+-- BITWISE HUB UNIVERSAL LOADER
+-- By IngVzzz
+
+-- 1. NUNGGU SAMPAI GAME SELESAI LOAD
+if game:GetService('ContentProvider').RequestQueueSize > 10 then           
+    repeat task.wait()
+    until game:GetService('ContentProvider').RequestQueueSize <= 10
+end
+
+-- 2. ANTI AFK
+game:GetService("Players").LocalPlayer.Idled:connect(function()
+    game:GetService("VirtualUser"):ClickButton2(Vector2.new())
+end)
+
+-- 3. SETUP FOLDER UNTUK NYIMPAN DATA
+local shared = {
+    version = "V3.0.0";
+    folders = {
+        main = 'IngVzz_VD_HUB',
+        games = 'IngVzz_VD_HUB/Games',
+    };
+}
+
+-- 4. BIKIN FOLDER KALO BELUM ADA
+for _, folder in pairs(shared.folders) do
+    if not isfolder(folder) then
+        makefolder(folder)
+    end
+end
+
+-- 5. DATABASE GAME (Place ID → URL Script)
+local games = {
+    [{93978595733734}] = "https://raw.githubusercontent.com/IngVzzz/Gui-Lybrary/refs/heads/main/IngVenz_gui_sendiri.lua"; -- Violence District
+    [{79546208627805}] = "https://raw.githubusercontent.com/"; -- 99 Nights (Lobby)
+    [{126509999114328}] = "https://raw.githubusercontent.com/"; -- 99 Nights (Game)
+    [{13822562292}] = "https://raw.githubusercontent.com/"; -- Midnight Chasers (Tokyo)
+    [{139048751758942}] = "https://raw.githubusercontent.com/"; -- Midnight Chasers (Salt Flats)
+    [{133327835421432}] = "https://raw.githubusercontent.com/"; -- Midnight Chasers (Tokyo CUSTOM)
+    [{121510074321001}] = "https://raw.githubusercontent.com/"; -- Midnight Chasers (Salt Flats CUSTOM)
+    [{3351674303}] = "https://raw.githubusercontent.com/"; -- Driving Empire
+    [{1554960397}] = "https://raw.githubusercontent.com/"; -- Car Dealership Tycoon
+}
+
+-- 6. CEK PLACE ID & LOAD SCRIPT YANG SESUAI
+for ids, url in next, games do
+    if table.find(ids, game.PlaceId) then
+        task.wait()
+        loadstring(game:HttpGet(url))()
+    end
+end

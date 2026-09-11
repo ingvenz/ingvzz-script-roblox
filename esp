@@ -1,0 +1,189 @@
+local Players = game:GetService("Players")
+local localPlayer = Players.LocalPlayer
+
+local Hook = {
+    Players = {
+        ["Killer"] = {Color = Color3.fromRGB(255, 0, 0), On = true},
+        ["Survivor"] = {Color = Color3.fromRGB(0, 255, 255), On = true}
+    }
+}
+
+local isActive = false
+local activeConnections = {}
+local playerConnections = {}
+
+local function safeDisconnect(conn)
+    if conn and conn.Disconnect then
+        pcall(function() conn:Disconnect() end)
+    end
+end
+
+local function clearAllConnections()
+    for _, conn in pairs(activeConnections) do
+        safeDisconnect(conn)
+    end
+    activeConnections = {}
+    
+    for player, conn in pairs(playerConnections) do
+        safeDisconnect(conn)
+    end
+    playerConnections = {}
+end
+
+local function GetLocalRole()
+    if not localPlayer.Team then return "Lobby" end
+    local name = localPlayer.Team.Name
+    if name == "Killer" then return "Killer" end
+    if name == "Survivors" then return "Survivor" end
+    return "Lobby"
+end
+
+local function RemoveHighlight(char)
+    if not char then return end
+    local h = char:FindFirstChild("ESP_Highlight")
+    if h then
+        h:Destroy()
+    end
+end
+
+local function ApplyHighlight(char, color)
+    if not char or not color then return end
+    
+    local existing = char:FindFirstChild("ESP_Highlight")
+    if existing and existing.FillColor == color then
+        return
+    end
+    
+    if existing then
+        existing:Destroy()
+    end
+    
+    local h = Instance.new("Highlight")
+    h.Name = "ESP_Highlight"
+    h.FillColor = color
+    h.OutlineColor = color
+    h.FillTransparency = 0.85
+    h.OutlineTransparency = 0.3
+    h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    h.Parent = char
+end
+
+local function UpdateSinglePlayer(player)
+    if not isActive then return end
+    if player == localPlayer then return end
+    if not player.Character or not player.Team then return end
+    
+    local teamName = player.Team.Name
+    local color = nil
+    
+    if teamName == "Killer" and Hook.Players["Killer"].On then
+        color = Hook.Players["Killer"].Color
+    elseif teamName == "Survivors" and Hook.Players["Survivor"].On then
+        color = Hook.Players["Survivor"].Color
+    end
+    
+    if color then
+        ApplyHighlight(player.Character, color)
+    else
+        RemoveHighlight(player.Character)
+    end
+end
+
+local function UpdateAllHighlights()
+    if not isActive then return end
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= localPlayer then
+            UpdateSinglePlayer(p)
+        end
+    end
+end
+
+local function DisableESP()
+    if not isActive then return end
+    isActive = false
+    for _, p in pairs(Players:GetPlayers()) do
+        if p.Character then
+            RemoveHighlight(p.Character)
+        end
+    end
+end
+
+local function EnableESP()
+    if isActive then return end
+    isActive = true
+    UpdateAllHighlights()
+end
+
+local function CheckAndToggle()
+    local role = GetLocalRole()
+    if role == "Killer" or role == "Survivor" then
+        EnableESP()
+    else
+        DisableESP()
+    end
+end
+
+local function BindPlayerEvents(player)
+    if player == localPlayer then return end
+    
+    if playerConnections[player] then
+        safeDisconnect(playerConnections[player])
+        playerConnections[player] = nil
+    end
+    
+    local conn = player.CharacterAdded:Connect(function()
+        wait(0.3)
+        if isActive then
+            UpdateSinglePlayer(player)
+        end
+    end)
+    playerConnections[player] = conn
+    table.insert(activeConnections, conn)
+end
+
+local function setupConnections()
+    clearAllConnections()
+    
+    local teamConn = localPlayer:GetPropertyChangedSignal("Team"):Connect(CheckAndToggle)
+    table.insert(activeConnections, teamConn)
+    
+    local charConn = localPlayer.CharacterAdded:Connect(function()
+        wait(0.5)
+        CheckAndToggle()
+    end)
+    table.insert(activeConnections, charConn)
+    
+    local playerAddedConn = Players.PlayerAdded:Connect(function(player)
+        BindPlayerEvents(player)
+        wait(0.2)
+        if isActive then
+            UpdateSinglePlayer(player)
+        end
+    end)
+    table.insert(activeConnections, playerAddedConn)
+    
+    local playerRemovingConn = Players.PlayerRemoving:Connect(function(player)
+        if player.Character then
+            RemoveHighlight(player.Character)
+        end
+        if playerConnections[player] then
+            safeDisconnect(playerConnections[player])
+            playerConnections[player] = nil
+        end
+    end)
+    table.insert(activeConnections, playerRemovingConn)
+end
+
+local function initialize()
+    setupConnections()
+    
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= localPlayer then
+            BindPlayerEvents(p)
+        end
+    end
+    
+    CheckAndToggle()
+end
+
+initialize()

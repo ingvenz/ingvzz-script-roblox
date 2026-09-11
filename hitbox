@@ -1,0 +1,188 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+
+local HITBOX_Size = 30
+local OriginalHitboxSizes = {}
+local active = false
+local updateTimer = 0
+local activeConnections = {}
+local playerCharacterConns = {}
+
+local function safeDisconnect(conn)
+    pcall(function() if conn then conn:Disconnect() end end)
+end
+
+local function clearAllPlayerConns()
+    for player, conn in pairs(playerCharacterConns) do
+        safeDisconnect(conn)
+    end
+    playerCharacterConns = {}
+end
+
+local function clearAllConnections()
+    for _, conn in pairs(activeConnections) do
+        safeDisconnect(conn)
+    end
+    activeConnections = {}
+    clearAllPlayerConns()
+end
+
+local function GetRole()
+    if not LocalPlayer.Team then return "Lobby" end
+    local name = LocalPlayer.Team.Name
+    if name == "Killer" then return "Killer" end
+    if name == "Survivors" then return "Survivor" end
+    return "Lobby"
+end
+
+local function IsSurvivor(player)
+    if player == LocalPlayer then return false end
+    if not player.Team then return false end
+    return player.Team.Name == "Survivors"
+end
+
+local function ResetHitbox(player)
+    if not player then return end
+    local orig = OriginalHitboxSizes[player]
+    if orig and player.Character then
+        local root = player.Character:FindFirstChild("HumanoidRootPart")
+        if root then
+            pcall(function()
+                root.Size = orig
+                root.CanCollide = true
+            end)
+        end
+    end
+    OriginalHitboxSizes[player] = nil
+end
+
+local function ResetAll()
+    for p, origSize in pairs(OriginalHitboxSizes) do
+        if p and p.Character then
+            local root = p.Character:FindFirstChild("HumanoidRootPart")
+            if root then
+                pcall(function()
+                    root.Size = origSize
+                    root.CanCollide = true
+                end)
+            end
+        end
+    end
+    OriginalHitboxSizes = {}
+end
+
+local function ExpandHitbox(player)
+    if not active then return end
+    if not player or player == LocalPlayer then return end
+    if not IsSurvivor(player) then return end
+    
+    local char = player.Character
+    if not char then return end
+    
+    local root = char:FindFirstChild("HumanoidRootPart")
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not root or not hum or hum.Health <= 0 then
+        ResetHitbox(player)
+        return
+    end
+    
+    if not OriginalHitboxSizes[player] then
+        OriginalHitboxSizes[player] = root.Size
+        pcall(function()
+            root.Size = Vector3.new(HITBOX_Size, HITBOX_Size, HITBOX_Size)
+            root.CanCollide = false
+        end)
+    end
+end
+
+local function UpdateAllHitboxes()
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            ExpandHitbox(p)
+        end
+    end
+end
+
+local function BindPlayerEvents(player)
+    if player == LocalPlayer then return end
+    
+    if playerCharacterConns[player] then
+        safeDisconnect(playerCharacterConns[player])
+        playerCharacterConns[player] = nil
+    end
+    
+    local conn = player.CharacterAdded:Connect(function()
+        wait(0.3)
+        ExpandHitbox(player)
+    end)
+    playerCharacterConns[player] = conn
+    table.insert(activeConnections, conn)
+end
+
+local function BindAllExistingPlayers()
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            ExpandHitbox(p)
+            BindPlayerEvents(p)
+            wait(0.05)
+        end
+    end
+end
+
+local function setupConnections()
+    clearAllConnections()
+    
+    local renderConn = RunService.RenderStepped:Connect(function(dt)
+        if GetRole() ~= "Killer" then
+            if active then
+                active = false
+                ResetAll()
+            end
+            return
+        end
+        
+        if not active then
+            active = true
+        end
+        
+        updateTimer = updateTimer + dt
+        if updateTimer >= 0.25 then
+            updateTimer = 0
+            UpdateAllHitboxes()
+        end
+    end)
+    table.insert(activeConnections, renderConn)
+    
+    local teamConn = LocalPlayer:GetPropertyChangedSignal("Team"):Connect(function()
+        active = false
+        ResetAll()
+        wait(0.2)
+        if GetRole() == "Killer" then
+            active = true
+            UpdateAllHitboxes()
+        end
+    end)
+    table.insert(activeConnections, teamConn)
+    
+    local playerAddedConn = Players.PlayerAdded:Connect(function(player)
+        BindPlayerEvents(player)
+    end)
+    table.insert(activeConnections, playerAddedConn)
+    
+    local playerRemovingConn = Players.PlayerRemoving:Connect(function(player)
+        ResetHitbox(player)
+        if playerCharacterConns[player] then
+            safeDisconnect(playerCharacterConns[player])
+            playerCharacterConns[player] = nil
+        end
+    end)
+    table.insert(activeConnections, playerRemovingConn)
+end
+
+setupConnections()
+BindAllExistingPlayers()
+
+if GetRole() == "Killer" then
+    active = true
+end

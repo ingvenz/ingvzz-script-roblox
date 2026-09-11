@@ -1,0 +1,23 @@
+local Players = game:GetService("Players")
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+local crosshairGui = Instance.new("ScreenGui")
+crosshairGui.Name = "CustomCrosshair"
+crosshairGui.ResetOnSpawn = false
+crosshairGui.IgnoreGuiInset = true
+crosshairGui.Parent = playerGui
+
+local dot = Instance.new("Frame")
+dot.Name = "Dot"
+dot.Size = UDim2.new(0, 5, 0, 5)
+dot.Position = UDim2.new(0.49, 0, 0.53, 0)
+dot.AnchorPoint = Vector2.new(0.5, 0.5)
+dot.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+dot.BorderSizePixel = 0
+dot.ZIndex = 100
+dot.Parent = crosshairGui
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0.5, 0)
+corner.Parent = dot

@@ -1,0 +1,155 @@
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+local destroyedRemotes = {
+    Healing = false,
+    Generator = false
+}
+
+local activeConnections = {}
+local retryCount = 0
+local MAX_RETRIES = 10
+
+local function safeDisconnect(conn)
+    pcall(function() if conn then conn:Disconnect() end end)
+end
+
+local function clearAllConnections()
+    for _, conn in pairs(activeConnections) do
+        safeDisconnect(conn)
+    end
+    activeConnections = {}
+end
+
+local function DisableSkillCheckEvent(folderName)
+    local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
+    if not Remotes then return false end
+
+    local targetFolder = Remotes:FindFirstChild(folderName)
+    if not targetFolder then return false end
+
+    local SkillCheckEvent = targetFolder:FindFirstChild("SkillCheckEvent")
+    if SkillCheckEvent then
+        pcall(function() SkillCheckEvent:Destroy() end)
+    end
+
+    destroyedRemotes[folderName] = true
+    return true
+end
+
+local function DestroyBoth()
+    destroyedRemotes.Healing = false
+    destroyedRemotes.Generator = false
+    DisableSkillCheckEvent("Healing")
+    DisableSkillCheckEvent("Generator")
+end
+
+local function WatchFolder(folderName)
+    local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
+    if not Remotes then return end
+
+    local targetFolder = Remotes:FindFirstChild(folderName)
+    if not targetFolder then return end
+
+    local existing = targetFolder:FindFirstChild("SkillCheckEvent")
+    if existing then 
+        pcall(function() existing:Destroy() end)
+    end
+
+    local childConn = targetFolder.ChildAdded:Connect(function(child)
+        if child.Name == "SkillCheckEvent" then
+            pcall(function() child:Destroy() end)
+            destroyedRemotes[folderName] = true
+        end
+    end)
+    table.insert(activeConnections, childConn)
+
+    local ancestryConn
+    ancestryConn = targetFolder.AncestryChanged:Connect(function()
+        if not targetFolder.Parent then
+            safeDisconnect(childConn)
+            safeDisconnect(ancestryConn)
+            for i = #activeConnections, 1, -1 do
+                if activeConnections[i] == childConn or activeConnections[i] == ancestryConn then
+                    table.remove(activeConnections, i)
+                end
+            end
+        end
+    end)
+    table.insert(activeConnections, ancestryConn)
+end
+
+local function WatchRemotesFolder()
+    local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
+    if not Remotes then return end
+
+    local function AddWatcher(folderName)
+        local target = Remotes:FindFirstChild(folderName)
+        if target then
+            WatchFolder(folderName)
+        end
+    end
+
+    AddWatcher("Healing")
+    AddWatcher("Generator")
+
+    local remotesChildConn = Remotes.ChildAdded:Connect(function(child)
+        if child.Name == "Healing" or child.Name == "Generator" then
+            task.wait(0.1)
+            WatchFolder(child.Name)
+            DisableSkillCheckEvent(child.Name)
+        end
+    end)
+    table.insert(activeConnections, remotesChildConn)
+end
+
+local function SetupWatchers()
+    local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
+    if Remotes then
+        DestroyBoth()
+        WatchRemotesFolder()
+        return true
+    end
+    return false
+end
+
+local function SafeDestroyOnRespawn(attempt)
+    attempt = attempt or 1
+    
+    if attempt > MAX_RETRIES then
+        return
+    end
+    
+    local success = pcall(SetupWatchers)
+    
+    if not success and attempt < MAX_RETRIES then
+        task.wait(0.5)
+        SafeDestroyOnRespawn(attempt + 1)
+    end
+end
+
+local function watchForRemotesFolder()
+    local remotesFolderConn = ReplicatedStorage.ChildAdded:Connect(function(child)
+        if child.Name == "Remotes" then
+            task.wait(0.2)
+            SafeDestroyOnRespawn(1)
+        end
+    end)
+    table.insert(activeConnections, remotesFolderConn)
+end
+
+local charConn = LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(0.3)
+    SafeDestroyOnRespawn(1)
+end)
+table.insert(activeConnections, charConn)
+
+local function initialize()
+    clearAllConnections()
+    activeConnections = {}
+    watchForRemotesFolder()
+    SafeDestroyOnRespawn(1)
+end
+
+initialize()

@@ -1,0 +1,173 @@
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+
+local Camera = nil
+local zoomLevel = 50
+local zoomSpeed = 3
+local isActive = false
+local activeConnections = {}
+local renderConn = nil
+local maxZoomDistConn = nil
+local inputConn = nil
+local DEFAULT_FOV = 70
+
+local function safeDisconnect(conn)
+    pcall(function() if conn then conn:Disconnect() end end)
+end
+
+local function cleanupConnections()
+    for i = #activeConnections, 1, -1 do
+        safeDisconnect(activeConnections[i])
+        activeConnections[i] = nil
+    end
+    activeConnections = {}
+    
+    if renderConn then
+        safeDisconnect(renderConn)
+        renderConn = nil
+    end
+    if maxZoomDistConn then
+        safeDisconnect(maxZoomDistConn)
+        maxZoomDistConn = nil
+    end
+    if inputConn then
+        safeDisconnect(inputConn)
+        inputConn = nil
+    end
+end
+
+local function GetRole()
+    if not LocalPlayer.Team then return "Unknown" end
+    local name = LocalPlayer.Team.Name
+    if name == "Killer" then return "Killer" end
+    if name == "Survivors" then return "Survivor" end
+    return "Lobby"
+end
+
+local function getCamera()
+    if workspace and workspace.CurrentCamera then
+        Camera = workspace.CurrentCamera
+        return true
+    end
+    return false
+end
+
+local function disableZoom()
+    if not isActive then return end
+    isActive = false
+    
+    if Camera then
+        pcall(function()
+            Camera.FieldOfView = DEFAULT_FOV
+        end)
+    end
+    
+    pcall(function()
+        LocalPlayer.CameraMaxZoomDistance = 40
+        LocalPlayer.CameraMinZoomDistance = 1
+    end)
+    
+    cleanupConnections()
+end
+
+local function setupZoomConnections()
+    if maxZoomDistConn then safeDisconnect(maxZoomDistConn) end
+    if inputConn then safeDisconnect(inputConn) end
+    if renderConn then safeDisconnect(renderConn) end
+    
+    maxZoomDistConn = LocalPlayer:GetPropertyChangedSignal("CameraMaxZoomDistance"):Connect(function()
+        if GetRole() == "Survivor" and isActive and LocalPlayer.CameraMaxZoomDistance < 50 then
+            pcall(function()
+                LocalPlayer.CameraMaxZoomDistance = 50
+            end)
+        end
+    end)
+    table.insert(activeConnections, maxZoomDistConn)
+    
+    inputConn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+        if GetRole() ~= "Survivor" then return end
+        if not isActive then return end
+        if not Camera then return end
+        if input.UserInputType == Enum.UserInputType.MouseWheel then
+            zoomLevel = zoomLevel - (input.Position.Z * zoomSpeed)
+            zoomLevel = math.clamp(zoomLevel, 20, 120)
+            pcall(function()
+                Camera.FieldOfView = zoomLevel
+            end)
+        end
+    end)
+    table.insert(activeConnections, inputConn)
+    
+    renderConn = RunService.RenderStepped:Connect(function()
+        if GetRole() ~= "Survivor" then
+            if isActive then
+                disableZoom()
+            end
+            return
+        end
+        
+        if not isActive then return end
+        
+        if not Camera then
+            getCamera()
+            return
+        end
+        
+        pcall(function()
+            if Camera.FieldOfView ~= zoomLevel then
+                Camera.FieldOfView = zoomLevel
+            end
+            if LocalPlayer.CameraMaxZoomDistance ~= 50 then
+                LocalPlayer.CameraMaxZoomDistance = 50
+            end
+        end)
+    end)
+    table.insert(activeConnections, renderConn)
+end
+
+local function enableZoom()
+    if isActive then return end
+    
+    if not getCamera() then
+        task.delay(0.5, function()
+            if GetRole() == "Survivor" and not isActive then
+                enableZoom()
+            end
+        end)
+        return
+    end
+    
+    isActive = true
+    zoomLevel = Camera.FieldOfView
+    DEFAULT_FOV = Camera.FieldOfView
+    
+    pcall(function()
+        LocalPlayer.CameraMaxZoomDistance = 50
+        LocalPlayer.CameraMinZoomDistance = 8
+    end)
+    
+    setupZoomConnections()
+end
+
+local function onRoleChanged()
+    if GetRole() == "Survivor" then
+        enableZoom()
+    else
+        disableZoom()
+    end
+end
+
+local teamConn = LocalPlayer:GetPropertyChangedSignal("Team"):Connect(onRoleChanged)
+table.insert(activeConnections, teamConn)
+
+local function initialize()
+    cleanupConnections()
+    if GetRole() == "Survivor" then
+        enableZoom()
+    end
+end
+
+initialize()
